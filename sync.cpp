@@ -2,17 +2,17 @@
 //
 
 #include "stdafx.h"
-#include <string>
-
-#define _CRT_RAND_S
-#include <stdlib.h>
 
 void RandomDelaySimulation()
 {
+	DWORD delay = 1000; // default 1000 ms if rand failed
 	const double constMaxDelayMS = 10000; // max delay in ms
+
 	unsigned int randomNumber = 0;
-	rand_s(&randomNumber);
-	Sleep( MulDiv(randomNumber, constMaxDelayMS, UINT_MAX + 1) );
+	errno_t err = rand_s(&randomNumber);
+	if (err == 0)
+		delay = (DWORD)((double)randomNumber / ((double)UINT_MAX + 1) * constMaxDelayMS);
+	Sleep( delay );
 }
 
 
@@ -64,17 +64,17 @@ void ProcessRequest(Request* request, Stopper stopSignal)
 	if (stopSignal.IsRaised())
 		return;
 
-	Sleep(15);
+	RandomDelaySimulation();
 
 	if (stopSignal.IsRaised())
 		return;
 
-	Sleep(15);
+	RandomDelaySimulation();
 
 	if (stopSignal.IsRaised())
 		return;
 
-	Sleep(15);
+	RandomDelaySimulation();
 }
 
 void DeleteRequest(Request* request)
@@ -83,8 +83,28 @@ void DeleteRequest(Request* request)
 		delete request;
 }
 
+DWORD WINAPI GetRequestThread(LPVOID lpParam)
+{
+	return S_OK;
+}
+
+DWORD WINAPI ProcessRequestThread(LPVOID lpParam)
+{
+	return S_OK;
+}
+
 int main()
 {
+	const int requestThreadCount = 3;
+	DWORD requestThreadId[requestThreadCount];
+	for (int i = 0; i < requestThreadCount; i++)
+		CreateThread(NULL, 0, GetRequestThread, NULL, 0, &requestThreadId[i]);
+
+	const int processThreadCount = 2;
+	DWORD processThreadId[processThreadCount];
+	for (int i = 0; i < processThreadCount; i++)
+		CreateThread(NULL, 0, ProcessRequestThread, NULL, 0, &processThreadId[i]);
+
 	return 0;
 }
 
