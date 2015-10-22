@@ -26,7 +26,10 @@ public:
 	Stopper() { event = nullptr; }
 	virtual ~Stopper() { if (event) ::CloseHandle(event); event = nullptr; }
 
-	bool Create() { event = ::CreateEvent(NULL, TRUE, FALSE, NULL);  }
+	bool Create()
+	{
+		return (event = ::CreateEvent(NULL, TRUE, FALSE, NULL)) != NULL;		
+	}
 	bool IsRaised() const 
 	{ 
 		if (event) 
@@ -59,6 +62,7 @@ namespace Request
 		void Dump() const {}
 
 	};
+	typedef Request* RequestPtr;
 
 	Request* CreateNewRequest()
 	{
@@ -96,38 +100,39 @@ namespace Request
 			return;
 
 		RandomDelaySimulation();
-
-		if (stopSignal.IsRaised())
-			return;
-
-		RandomDelaySimulation();
 	}
 
 	void DeleteRequest(Request* request)
 	{
 		if (request)
-			delete request;
-	
+			delete request;	
 	}
 }; 
 
 
 class Processor
 {
-	std::queue<std::shared_ptr<Request::Request> > requests;
 	Stopper stopper;
-	mutable std::mutex mt;
+
+	std::queue<Request::RequestPtr> requests; // очередь с запросами
+	std::mutex mt; // для синхронизации
+	std::condition_variable condition;
 
 public:
 	static DWORD WINAPI GetRequestThread(LPVOID lpParam)
 	{
-		while (!stopper.IsRaised())
+		Processor* pProcessor = reinterpret_cast<Processor*>(lpParam);
+		if (!pProcessor)
+			return S_FALSE;
+
+		while (!pProcessor->stopper.IsRaised())
 		{
-			Request::Request* request = Request::GetRequest(stopper);
+			Request::Request* request = Request::GetRequest(pProcessor->stopper);
 			if (request)
 			{
-				std::lock<std::mutex> queue_lock(mt);
-				requests.push(request);
+				std::lock_guard<std::mutex> queue_lock(pProcessor->mt);
+				pProcessor->requests.push(request);
+				pProcessor->condition.notify_one();
 			}
 		}
 		return S_OK;
@@ -135,22 +140,39 @@ public:
 
 	static DWORD WINAPI ProcessRequestThread(LPVOID lpParam)
 	{
-		while (!stopper.IsRaised())
+		Processor* pProcessor = reinterpret_cast<Processor*>(lpParam);
+		if (!pProcessor)
+			return S_FALSE;
+
+		while (!pProcessor->stopper.IsRaised())
 		{
-			Lock queue_lock();
-			Request::Request* request = requests.front();
-			requests.pop();
-			Request::ProcessRequest(request, stopper);
+			std::unique_lock<std::mutex> queue_lock(pProcessor->mt);
+			while (pProcessor->requests.empty())
+			{
+				pProcessor->condition.wait(queue_lock);
+			}
+
+			Request::Request* request = pProcessor->requests.front();
+			pProcessor->requests.pop();
+
+			Request::ProcessRequest(request, pProcessor->stopper);
+			Request::DeleteRequest(request);
 		}
 		return S_OK;
 	}
 
-	Processor() {}
+	Processor()
+	{
+		stopper.Create();
+	}
 	virtual ~Processor()
 	{
-		// TODO free here
-		//for (auto it = requests)
-		//Request::DeleteRequest(request);
+		while (!requests.empty())
+		{
+			Request::Request* request = requests.front();
+			requests.pop();
+			Request::DeleteRequest(request);
+		}
 	}
 
 	void Run(int requestThreadCount, int processThreadCount)
@@ -158,12 +180,12 @@ public:
 		std::vector<DWORD> requestThreadIds;
 		requestThreadIds.reserve(requestThreadCount);
 		for (auto i = 0; i < requestThreadCount; i++)
-			CreateThread(NULL, 0, GetRequestThread, NULL, 0, &requestThreadIds[i]);
+			CreateThread(NULL, 0, GetRequestThread, this, 0, &requestThreadIds[i]);
 
 		std::vector<DWORD> processThreadIds;
 		processThreadIds.reserve(processThreadCount);
 		for (auto i = 0; i < processThreadCount; i++)
-			CreateThread(NULL, 0, ProcessRequestThread, NULL, 0, &processThreadIds[i]);
+			CreateThread(NULL, 0, ProcessRequestThread, this, 0, &processThreadIds[i]);
 	}
 };
 
