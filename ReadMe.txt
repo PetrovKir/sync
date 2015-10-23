@@ -1,40 +1,16 @@
-========================================================================
-    CONSOLE APPLICATION : sync Project Overview
-========================================================================
-
-AppWizard has created this sync application for you.
-
-This file contains a summary of what you will find in each of the files that
-make up your sync application.
+1.	С++ 11 использовать можно.
+2.	Решение должно работать на Windows XP.
+3.	Тип Stopper должен быть определён вами и должен представлять собой механизм досрочной остановки выполняемого действия (предполагается, что GetRequest и ProcessRequest будут его корректно использовать).
+4.	Вызов GetRequest может не сразу возвращать задания.
+5.	Вызов ProcessRequest может не мгновенно обрабатывать задание.
+6.	Синхронизационная часть задачи должна использовать Win32 API.
 
 
-sync.vcxproj
-    This is the main project file for VC++ projects generated using an Application Wizard.
-    It contains information about the version of Visual C++ that generated the file, and
-    information about the platforms, configurations, and project features selected with the
-    Application Wizard.
+Задача: 
 
-sync.vcxproj.filters
-    This is the filters file for VC++ projects generated using an Application Wizard. 
-    It contains information about the association between the files in your project 
-    and the filters. This association is used in the IDE to show grouping of files with
-    similar extensions under a specific node (for e.g. ".cpp" files are associated with the
-    "Source Files" filter).
+1)	Организовать в несколько потоков (переменное число, но не менее двух) приём запросов, для этого класть в одну очередь задания, возвращаемые функцией GetRequest.
+2)	Запустить несколько обрабатывающих запросы потоков (переменное число, но не менее двух), которые должны обрабатывать поступающие из очереди задания с помощью ProcessRequest.
+3)	Поработать в течение 30 секунд.
+4)	Корректно остановить все потоки. Если остались необработанные задания, не обрабатывать их и корректно удалить.
+5)	Завершить программу.
 
-sync.cpp
-    This is the main application source file.
-
-/////////////////////////////////////////////////////////////////////////////
-Other standard files:
-
-StdAfx.h, StdAfx.cpp
-    These files are used to build a precompiled header (PCH) file
-    named sync.pch and a precompiled types file named StdAfx.obj.
-
-/////////////////////////////////////////////////////////////////////////////
-Other notes:
-
-AppWizard uses "TODO:" comments to indicate parts of the source code you
-should add to or customize.
-
-/////////////////////////////////////////////////////////////////////////////

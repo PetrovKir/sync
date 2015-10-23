@@ -48,6 +48,22 @@ public:
 	}
 };
 
+class CriticalSectionLock
+{
+	LPCRITICAL_SECTION pCriticalSection;
+
+public:
+	CriticalSectionLock(LPCRITICAL_SECTION cs) : pCriticalSection(cs)
+	{
+		if (pCriticalSection)
+			EnterCriticalSection(pCriticalSection);
+	}
+	virtual ~CriticalSectionLock()
+	{
+		if (pCriticalSection)
+			LeaveCriticalSection(pCriticalSection);
+	}
+};
 
 namespace Request
 {
@@ -115,8 +131,8 @@ class Processor
 	Stopper stopper;
 
 	std::queue<Request::RequestPtr> requests; // очередь с запросами
-	std::mutex mt; // для синхронизации
-	std::condition_variable condition;
+	HANDLE queueEvent;
+	CRITICAL_SECTION criticalSection;
 
 public:
 	static DWORD WINAPI GetRequestThread(LPVOID lpParam)
@@ -130,9 +146,15 @@ public:
 			Request::Request* request = Request::GetRequest(pProcessor->stopper);
 			if (request)
 			{
-				std::lock_guard<std::mutex> queue_lock(pProcessor->mt);
-				pProcessor->requests.push(request);
-				pProcessor->condition.notify_one();
+				try
+				{
+					CriticalSectionLock lock(&pProcessor->criticalSection);
+					pProcessor->requests.push(request);
+				}
+				catch (std::exception& e)
+				{
+										
+				}
 			}
 		}
 		return S_OK;
@@ -146,10 +168,10 @@ public:
 
 		while (!pProcessor->stopper.IsRaised())
 		{
-			std::unique_lock<std::mutex> queue_lock(pProcessor->mt);
+			CriticalSectionLock lock(&pProcessor->criticalSection);
 			while (pProcessor->requests.empty())
 			{
-				pProcessor->condition.wait(queue_lock);
+				;
 			}
 
 			Request::Request* request = pProcessor->requests.front();
@@ -164,6 +186,8 @@ public:
 	Processor()
 	{
 		stopper.Create();
+		queueEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
+		InitializeCriticalSection(&criticalSection);
 	}
 	virtual ~Processor()
 	{
@@ -173,6 +197,8 @@ public:
 			requests.pop();
 			Request::DeleteRequest(request);
 		}
+		CloseHandle(queueEvent);
+		DeleteCriticalSection(&criticalSection);
 	}
 
 	void Run(int requestThreadCount, int processThreadCount)
